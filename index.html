@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>スマホ傾きゲーム</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background-color: #222;
+      color: #fff;
+      font-family: sans-serif;
+      text-align: center;
+      overflow: hidden;
+      touch-action: none;
+    }
+    #info {
+      position: absolute;
+      top: 10px;
+      width: 100%;
+      z-index: 10;
+    }
+    #start-btn {
+      padding: 12px 24px;
+      font-size: 18px;
+      background-color: #28a745;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+    canvas {
+      display: block;
+      background-color: #333;
+      margin: 0 auto;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="info">
+    <button id="start-btn">ゲームスタート（センサー許可）</button>
+    <p id="status">ボタンを押してスタートしてください</p>
+  </div>
+
+  <canvas id="gameCanvas"></canvas>
+
+  <script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const startBtn = document.getElementById('start-btn');
+    const statusText = document.getElementById('status');
+
+    // 画面サイズ調整
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+
+    // プレイヤー（ボール）の設定
+    const ball = {
+      x: canvas.width / 2,
+      y: canvas.height / 2,
+      radius: 20,
+      vx: 0,
+      vy: 0,
+      color: '#00d2ff'
+    };
+
+    // ゴールの設定
+    const target = {
+      x: canvas.width - 80,
+      y: canvas.height - 80,
+      size: 60,
+      color: '#ff4757'
+    };
+
+    let gameActive = false;
+
+    // スタートボタン押下時の処理（iOS対策用）
+    startBtn.addEventListener('click', async () => {
+      // iOS向けに DeviceOrientationEvent の許可をリクエスト
+      if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+        try {
+          const permission = await DeviceOrientationEvent.requestPermission();
+          if (permission === 'granted') {
+            startGame();
+          } else {
+            alert('センサーのアクセスが拒否されました。');
+          }
+        } catch (error) {
+          console.error(error);
+          alert('エラーが発生しました。');
+        }
+      } else {
+        // Android または非iOS端末
+        startGame();
+      }
+    });
+
+    function startGame() {
+      startBtn.style.display = 'none';
+      statusText.innerText = 'スマホを傾けて青いボールを赤い枠に入れよう！';
+      gameActive = true;
+
+      // 傾き検知イベントのリスナー登録
+      window.addEventListener('deviceorientation', handleOrientation);
+
+      // ゲームループ開始
+      requestAnimationFrame(update);
+    }
+
+    // 傾き検知時の処理
+    function handleOrientation(event) {
+      if (!gameActive) return;
+
+      // gamma: 左右の傾き (-90 〜 90)
+      // beta: 上下の傾き (-180 〜 180)
+      const tiltX = event.gamma; 
+      const tiltY = event.beta;
+
+      // 傾きを加速度に変換（感度調整）
+      if (tiltX !== null && tiltY !== null) {
+        ball.vx += tiltX * 0.05;
+        ball.vy += tiltY * 0.05;
+      }
+    }
+
+    // ゲーム状態の更新と描画
+    function update() {
+      if (!gameActive) return;
+
+      // 摩擦（だんだん減速させる）
+      ball.vx *= 0.98;
+      ball.vy *= 0.98;
+
+      // 位置の更新
+      ball.x += ball.vx;
+      ball.y += ball.vy;
+
+      // 壁との衝突判定（画面外に出ないようにする）
+      if (ball.x - ball.radius < 0) {
+        ball.x = ball.radius;
+        ball.vx *= -0.5;
+      }
+      if (ball.x + ball.radius > canvas.width) {
+        ball.x = canvas.width - ball.radius;
+        ball.vx *= -0.5;
+      }
+      if (ball.y - ball.radius < 0) {
+        ball.y = ball.radius;
+        ball.vy *= -0.5;
+      }
+      if (ball.y + ball.radius > canvas.height) {
+        ball.y = canvas.height - ball.radius;
+        ball.vy *= -0.5;
+      }
+
+      // ゴール判定
+      if (
+        ball.x > target.x &&
+        ball.x < target.x + target.size &&
+        ball.y > target.y &&
+        ball.y < target.y + target.size
+      ) {
+        statusText.innerText = 'クリア！おめでとうございます！';
+        statusText.style.color = '#2ed573';
+        statusText.style.fontSize = '24px';
+        gameActive = false;
+      }
+
+      // 画面のクリア
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // ゴールの描画
+      ctx.strokeStyle = target.color;
+      ctx.lineWidth = 4;
+      ctx.strokeRect(target.x, target.y, target.size, target.size);
+
+      // ボールの描画
+      ctx.beginPath();
+      ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
+      ctx.fillStyle = ball.color;
+      ctx.fill();
+      ctx.closePath();
+
+      if (gameActive) {
+        requestAnimationFrame(update);
+      }
+    }
+  </script>
+</body>
+</html>
