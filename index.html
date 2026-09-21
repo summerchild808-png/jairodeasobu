@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>ソフトクリーム・バランスゲーム</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background-color: #fce4ec;
+      color: #333;
+      font-family: sans-serif;
+      text-align: center;
+      overflow: hidden;
+      touch-action: none;
+    }
+    #ui {
+      position: absolute;
+      top: 10px;
+      width: 100%;
+      z-index: 10;
+    }
+    #start-btn {
+      padding: 12px 24px;
+      font-size: 18px;
+      background-color: #ff4081;
+      color: white;
+      border: none;
+      border-radius: 20px;
+      font-weight: bold;
+      cursor: pointer;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+    #score-display {
+      font-size: 20px;
+      font-weight: bold;
+      margin-top: 5px;
+      color: #880e4f;
+    }
+    canvas {
+      display: block;
+      background-color: #fff5f8;
+      margin: 0 auto;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="ui">
+    <button id="start-btn">ゲームスタート（センサー許可）</button>
+    <div id="score-display">高さ: 0 cm</div>
+  </div>
+
+  <canvas id="gameCanvas"></canvas>
+
+  <script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const startBtn = document.getElementById('start-btn');
+    const scoreDisplay = document.getElementById('score-display');
+
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+
+    // ゲーム状態
+    let gameActive = false;
+    let tiltX = 0; // スマホの左右傾き
+    let currentBalance = 0; // 現在のバランスのずれ
+    let creamLayers = []; // クリームの層データ
+    let spawnTimer = 0;
+    let score = 0;
+
+    // コーンの位置とサイズ
+    const cone = {
+      x: canvas.width / 2,
+      y: canvas.height - 120,
+      width: 60,
+      height: 90
+    };
+
+    // スタートボタン処理
+    startBtn.addEventListener('click', async () => {
+      if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+        try {
+          const permission = await DeviceOrientationEvent.requestPermission();
+          if (permission === 'granted') {
+            resetGame();
+          } else {
+            alert('センサーの許可が必要です');
+          }
+        } catch (e) {
+          alert('エラーが発生しました');
+        }
+      } else {
+        resetGame();
+      }
+    });
+
+    // 傾き検知
+    window.addEventListener('deviceorientation', (e) => {
+      if (e.gamma !== null) {
+        // gamma: -90〜90度（左右傾き）
+        tiltX = e.gamma;
+      }
+    });
+
+    function resetGame() {
+      startBtn.style.display = 'none';
+      gameActive = true;
+      creamLayers = [];
+      currentBalance = 0;
+      score = 0;
+      spawnTimer = 0;
+      requestAnimationFrame(update);
+    }
+
+    function update() {
+      if (!gameActive) return;
+
+      // 1. 傾きに応じてバランスの偏りを蓄積
+      // 傾けることで物理的に釣り合いを取る操作感
+      currentBalance += tiltX * 0.08;
+
+      // 自然な摩擦で少し元に戻る力
+      currentBalance *= 0.98;
+
+      // 2. 一定時間ごとに新しいクリームを生成（巻いていく）
+      spawnTimer++;
+      if (spawnTimer % 20 === 0) {
+        const layerCount = creamLayers.length;
+        // 上に行くほど徐々にサイズを小さくする
+        const radius = Math.max(15, 35 - layerCount * 0.3);
+        
+        creamLayers.push({
+          offsetFactor: layerCount * 0.05 + 1, // 上層ほど傾きの影響を受けやすくする
+          radius: radius
+        });
+
+        score = creamLayers.length;
+        scoreDisplay.innerText = `高さ: ${score} cm`;
+      }
+
+      // 3. 崩壊チェック（バランスがずれすぎたら倒れる）
+      if (Math.abs(currentBalance) > canvas.width * 0.4) {
+        gameActive = false;
+        scoreDisplay.innerText = `崩れちゃった！ 記録: ${score} cm`;
+        startBtn.innerText = 'もう一度挑戦';
+        startBtn.style.display = 'inline-block';
+        return;
+      }
+
+      // 描画処理
+      draw();
+
+      if (gameActive) {
+        requestAnimationFrame(update);
+      }
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // --- コーンの描画 ---
+      ctx.fillStyle = '#d7ccc8';
+      ctx.strokeStyle = '#8d6e63';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(cone.x - cone.width / 2, cone.y);
+      ctx.lineTo(cone.x + cone.width / 2, cone.y);
+      ctx.lineTo(cone.x, cone.y + cone.height);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      // --- ソフトクリームの描画（下から上へ重ねる） ---
+      let currentY = cone.y - 10;
+
+      for (let i = 0; i < creamLayers.length; i++) {
+        const layer = creamLayers[i];
+        
+        // 傾き（currentBalance）の影響を受けて左右にズレる
+        const layerX = cone.x + (currentBalance * (i * 0.08));
+
+        // クリームの層（丸）
+        ctx.fillStyle = '#ffffff';
+        ctx.strokeStyle = '#f8bbd0';
+        ctx.lineWidth = 2;
+
+        ctx.beginPath();
+        ctx.arc(layerX, currentY, layer.radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+
+        // 影・立体感のツヤ表現
+        ctx.fillStyle = '#fff8e1';
+        ctx.beginPath();
+        ctx.arc(layerX - layer.radius * 0.3, currentY - layer.radius * 0.3, layer.radius * 0.3, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 次の層の高さへ
+        currentY -= layer.radius * 0.8;
+      }
+    }
+  </script>
+</body>
+</html>
